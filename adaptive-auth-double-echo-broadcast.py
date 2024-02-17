@@ -192,7 +192,7 @@ class Process:
         if len(self.readys) > 2*self.f and self.delivered == False:
             self.delivered = True
             print("*Delivering Broadcast*: " + str(self.id) + " recieves " + msg)
-            self.message = msg # Trigger brbDeliver
+            self.message = msg # Trigger abrbDeliver
 
     def getMessage(self):
         return self.message
@@ -253,7 +253,7 @@ if __name__ == "__main__":
         if q.timer != 0 and time.time() - q.timer > 5:
             q.Timeout()
     
-    # BrB deliver
+    # ABrB deliver
     for q in phase3Set:
         q.abrbDeliver(msg)
         
