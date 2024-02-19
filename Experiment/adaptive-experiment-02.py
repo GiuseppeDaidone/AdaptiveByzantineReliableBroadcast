@@ -278,7 +278,7 @@ if __name__ == "__main__":
     
     # Check timeout
     for q in phase3Set:
-        if q.timer != 0 and time.time() - q.timer > 120:
+        if q.timer != 0 and time.time() - q.timer > 5:
             q.Timeout()
     
     # ABrB deliver
