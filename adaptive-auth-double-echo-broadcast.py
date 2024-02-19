@@ -28,6 +28,9 @@ class Process:
         self.Processes = Processes
         self.correct = Processes.copy()
         
+    def setSender(self, sender):
+        self.s = sender
+        
     def getId(self):
         return self.id
         
@@ -39,13 +42,11 @@ class Process:
     
     def alSendSend(self, id, sender, msg):
         self.phase1 = True
-        self.alDeliverSend(id, sender, msg)
         
     def getPhase1(self):
         return self.phase1
     
     def alDeliverSend(self, id, sender, msg):
-        self.s = sender
         if self.sentecho == False:
             print("Delivering alSend by " + str(self.id))
             self.sentecho = True
@@ -75,36 +76,43 @@ class Process:
         cons, count = Counter(msg).most_common(1)[0]
         return cons
     
+    def suspectedAppend(self, id):
+        for p in self.Processes:
+            if p.getId() == id:
+                self.suspected.append(p)
+    
     def consistentEchoWaitEvent(self):
         if len(self.echos) > ((3*len(self.correct))/4):
             cons = self.consistentMessage(self.echos)
             print(self.id + " found cons = " + cons)
             for p in self.echos:
-                if self.echos[p] != cons and p != self.s and p not in self.suspected:
-                    self.suspected.append(p)
-                    f = f + 1
-            if self.echos[self.s.getId()] != cons:
-                f = f + 1
+                if self.echos[p] != cons and p != self.s.getId() and p not in self.suspected:
+                    self.suspectedAppend(p)
+                    self.f = self.f + 1
+            if self.echos[self.s.getId()] != self.echos[self.getId()]:
+                self.f = self.f + 1
                 self.faulty.append(self.s)
                 self.correct.remove(self.s)
                 self.byzantinesender = True
+                print(self.getId() + " detected the sender as Byzantine")
                 for q in self.correct:
-                    q.ByzantineSenderSend(self.echos) # Trigger ByzantineSender
+                    q.ByzantineSenderSend(self.getId(), self.echos) # Trigger ByzantineSender
             elif self.suspected is not None and self.s not in self.suspected:
                 self.suspected.append(self.s)
             
     def correct_minus_suspected(self):
-        correct_minus_suspected = []
+        correct_minus_suspected = self.correct.copy()
         if self.suspected is not None:
-            for p in self.correct:
-                if p.getId() not in self.suspected:
-                    correct_minus_suspected.append(p)
+            for p in self.suspected:
+                if p in correct_minus_suspected:
+                    correct_minus_suspected.remove(p)
         return correct_minus_suspected
     
     def readyWaitEvent(self, msg):
         if len(self.echos) > ((len(self.correct) + self.f) / 2) and self.sentready == False and self.byzantinesender == False:
             self.sentready = True
             correct_minus_suspected = self.correct_minus_suspected()
+            correct_minus_suspected.append(self.s)
             for q in correct_minus_suspected:
                 print("Sending alReady: " + str(self.id) + " -> " + str(q.getId()))
                 q.alSendReady(self.id, msg) # Trigger alSendReady
@@ -127,17 +135,24 @@ class Process:
         for p in self.correct:
             if p.getId() == id:
                 self.correct.remove(p)
+                
+    def suspectedRemove(self, id):
+        for p in self.suspected:
+            if p.getId() == id:
+                self.suspected.remove(p)
     
     def alDeliverReady(self, id, msg):
         if self.readys.get(id) is None and self.echos.get(id) == msg:
             print("Delivering alReady by " + str(self.id))
             self.readys[id] = msg
         elif self.readys.get(id) != self.echos.get(id) and id != self.s.getId():
-            self.faultyAppend(self.correct, id) # -> Every process think that the others are faulty
+            self.f = self.f + 1
+            self.faultyAppend(self.correct, id)
             self.correctRemove(id)
+            self.suspectedRemove(id)
         if len(self.echos) > self.f and self.sentready == False:
             self.sentready = True
-            for q in self.Processes:
+            for q in self.correct:
                 q.alSendReady(self.id, msg) # Trigger alSendReady
             self.timer = time.time() # StartTimer()
     
@@ -148,8 +163,9 @@ class Process:
                 self.faulty.append(self.s)
                 self.correct.remove(self.s)
                 self.byzantinesender = True
+                print(self.getId() + " detected the sender as Byzantine")
                 for q in self.correct:
-                    q.ByzantineSenderSend(self.echos) # Trigger ByzantineSender
+                    q.ByzantineSenderSend(self.getId(), self.echos) # Trigger ByzantineSender
             elif self.suspected is not None:
                 self.suspected.remove(self.s)
                 for p in self.suspected:
@@ -157,19 +173,26 @@ class Process:
                     self.correct.remove(p)
                     self.suspected.remove(p)
 
-    def ByzantineSenderSend(self, echos_p):
-        self.ByzantineSenderDeliver(self, echos_p)
+    def ByzantineSenderSend(self, p_id, echos_p):
+        self.ByzantineSenderDeliver(p_id, echos_p)
 
-    def ByzantineSenderDeliver(self, echos_p):
-        self.senderechos = self.senderechos + echos_p[self.s]
+    def ByzantineSenderDeliver(self, p_id, echos_p):
+        self.senderechos.append(echos_p[p_id])
+        
+    def suspected_minus_sender(self):
+        suspected_minus_sender = self.suspected.copy()
+        if self.s in suspected_minus_sender:
+            suspected_minus_sender.remove(self.s)
+        return suspected_minus_sender
     
-    def deliverCheckWaitEvent(self):
+    def misledCheckWaitEvent(self):
         correct_minus_suspected = self.correct_minus_suspected()
         if len(self.senderechos) == len(correct_minus_suspected) - 1:
             if self.byzantinesender == False:
                 for m in self.senderechos:
                     if self.echos.get(self.getId()) != m:
-                        for q in self.suspected:
+                        suspected_minus_sender = self.suspected_minus_sender()
+                        for q in suspected_minus_sender:
                             self.correct.append(q)
                             self.f = self.f - 1
                         self.f = self.f + 1
@@ -177,8 +200,9 @@ class Process:
                         self.correct.remove(self.s)
                         self.suspected.remove(self.s)
                         self.byzantinesender = True
+                        print(self.getId() + " detected the sender as Byzantine")
                         for p in self.correct:
-                            q.ByzantineSenderSend(self.echos) # Trigger ByzantineSender
+                            p.ByzantineSenderSend(self.getId(), self.echos) # Trigger ByzantineSender
                         break
 
     def Timeout(self):
@@ -206,13 +230,13 @@ if __name__ == "__main__":
     Processes = [P0, P1, P2, P3]
     for p in Processes:
         p.setProcesses(Processes)
+        p.setSender(P0)
     msg = "Hello World!"
     
     # BrB broadcast
     P0.abrbBroadcast(msg)
     
     # Send phase
-    #print("SendPhase")
     phase1Set = []
     for q in Processes:
         if q.getPhase1() == True:
@@ -220,33 +244,32 @@ if __name__ == "__main__":
             q.alDeliverSend(q.getId(), P0, msg)
     
     # Echo phase
-    #print("EchoPhase")
     phase2Set = []
     for q in phase1Set:
         if q.getPhase2() == True:
             phase2Set.append(q)
-            #q.alDeliverEcho(q.getId(), msg)
             
     # Consistent Echo Message
     for q in phase2Set:
         q.consistentEchoWaitEvent()
     
     # Ready phase
-    #print("ReadyPhase")
     phase3Set = []
     for q in phase2Set:
         q.readyWaitEvent(msg)
         if q.getPhase3() == True:
             phase3Set.append(q)
-            #q.alDeliverReady(q.getId(), msg)
     
     # Ready Check Wait
     for q in phase3Set:
         q.readyCheckWaitEvent()
     
-    # Deliver Check Wait
-    for q in phase3Set:
-        q.deliverCheckWaitEvent()
+    # Misled Check Wait
+    phase3SetReduced = phase3Set.copy()
+    if P0 in phase3SetReduced:
+        phase3SetReduced.remove(P0)
+    for q in phase3SetReduced:
+        q.misledCheckWaitEvent()
     
     # Check timeout
     for q in phase3Set:
@@ -260,3 +283,24 @@ if __name__ == "__main__":
     # Message stored
     for q in phase3Set:
         print("Message stored by " + q.getId() + ": " + q.getMessage())
+
+    # Check values in case of Byzantines
+    Correct = [P0, P1, P2, P3]
+    for p in Correct:
+        echos = "[ "
+        for e in p.echos.items():
+            echos = echos + str(e) + " "
+        echos = echos + "]"
+        readys = "[ "
+        for r in p.readys.items():
+            readys = readys + str(r) + " "
+        readys = readys + "]"
+        correct = "[ "
+        for c in p.correct:
+            correct = correct + c.getId() + " "
+        correct = correct + "]"
+        faulty = "[ "
+        for b in p.faulty:
+            faulty = faulty + b.getId() + " "
+        faulty = faulty + "]"
+        print(p.getId() + ": Echos " + echos + ", Readys" + readys + ", Correct " + correct + ", Faulty " + faulty + ", f = " + str(p.f))
